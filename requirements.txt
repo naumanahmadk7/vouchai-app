@@ -1,0 +1,13 @@
+streamlit
+pandas
+pdfplumber
+PyMuPDF
+pytesseract
+easyocr
+fuzzywuzzy
+python-Levenshtein
+Pillow
+numpy
+openpyxl
+python-dateutil
+xlsxwriter
