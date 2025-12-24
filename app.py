@@ -33,9 +33,7 @@ def parse_invoice_text(text: str, filename: str) -> dict:
         "Raw_Text": text
     }
 
-    # --- 1. CLEAN THE TEXT (Remove Noise) ---
     clean_lines = []
-    # Explicit ignore list
     noise_patterns = [
         r"===", r"---", r"OCR", r"DIGITIZATION", 
         r"TESSERACT", r"EASYOCR", r"PDFPLUMBER",
@@ -44,39 +42,27 @@ def parse_invoice_text(text: str, filename: str) -> dict:
     ]
     
     for line in text.split('\n'):
-        # Skip empty or short lines
         if len(line.strip()) < 3: continue
-        
         is_noise = False
         for p in noise_patterns:
             if re.search(p, line, re.IGNORECASE): 
                 is_noise = True
                 break
-        
         if not is_noise:
             clean_lines.append(line.strip())
 
-    # --- 2. EXTRACT VENDOR (Aggressive Filter) ---
-    # Strategy: The Vendor is usually the first line that has NO numbers and NO dates.
-    for line in clean_lines[:8]: # Look a bit deeper
-        # If line has NO digits (0-9) and starts with a Letter
+    for line in clean_lines[:8]: 
         if not re.search(r'\d', line) and re.match(r'^[A-Za-z]', line):
             data["Vendor"] = line
             break
 
-    # --- 3. EXTRACT AMOUNT (The "Greedy" Regex) ---
-    # This finds "Total" followed by ANYTHING (like % or {) and then a number
-    # Matches: "Total % 42,480" -> 42480.0
     greedy_amount = re.search(r'(?:Total|Balance|Due|Amount).*?([\d,]+\.\d{2})', text, re.IGNORECASE)
-    
     if greedy_amount:
         try:
             val = float(greedy_amount.group(1).replace(',', '').replace(' ', ''))
             data["Amount"] = val
         except: pass
     else:
-        # Fallback: Find the largest number that looks like money
-        # Looks for 100.00 or 1,000.00 (must have 2 decimals)
         all_money = re.findall(r'(\d{1,3}(?:,\d{3})*\.\d{2})', text)
         valid_amounts = []
         for m in all_money:
@@ -84,22 +70,15 @@ def parse_invoice_text(text: str, filename: str) -> dict:
                 v = float(m.replace(',', ''))
                 valid_amounts.append(v)
             except: pass
-        
         if valid_amounts:
             data["Amount"] = max(valid_amounts)
 
-    # --- 4. EXTRACT DATE (Month Name Support) ---
-    # Strategy: Look for "Jan", "Feb", etc explicitly
     months = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*"
-    
-    # Matches: "Jun 19, 2019" or "June 19 2019"
     text_date = re.search(f"({months}" + r"\s+\d{1,2},?\s*\d{4})", text, re.IGNORECASE)
-    
-    # Matches: "2019-06-19" or "06/19/2019"
     numeric_date = re.search(r'(\d{4}-\d{2}-\d{2})|(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', text)
 
     if text_date:
-        data["Date"] = text_date.group(1) # Keep the text string (e.g. "Jun 19, 2019")
+        data["Date"] = text_date.group(1)
     elif numeric_date:
         data["Date"] = numeric_date.group(0)
 
@@ -111,30 +90,21 @@ def run_audit_match(ledger_df, processed_invoices):
     results['Linked File'] = ''
 
     for idx, row in results.iterrows():
-        try:
-            ledger_amt = float(row.get('Amount', 0))
-        except:
-            ledger_amt = 0.0
+        try: ledger_amt = float(row.get('Amount', 0))
+        except: ledger_amt = 0.0
         
-        # Simple string date match for robustness
         ledger_date = str(row.get('Date', '')).lower()
         
         for inv in processed_invoices:
-            # 1. Amount Match (Exact)
             amt_match = abs(ledger_amt - inv['Amount']) < 1.00
             
-            # 2. Date Match (Check if one string contains the other)
-            # e.g. Ledger "2019-06-19" contains Invoice "Jun" or vice versa? 
-            # This is a hacky but effective "Fuzzy Date"
             inv_date = str(inv['Date']).lower()
             date_match = False
             if len(inv_date) > 3 and len(ledger_date) > 3:
-                # Basic overlap check
                 if inv_date in ledger_date or ledger_date in inv_date:
                     date_match = True
-                # Check for year overlap + month overlap if simple fail
                 if '2019' in inv_date and '2019' in ledger_date:
-                    date_match = True # Very loose, good for prototype
+                    date_match = True 
 
             if amt_match: 
                 results.at[idx, 'Match Status'] = '✅ Matched'
@@ -149,12 +119,12 @@ def run_audit_match(ledger_df, processed_invoices):
 col1, col2 = st.columns([3, 1])
 with col1:
     st.markdown('<p class="main-header">🛡️ VouchAI Workbench</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">Aggressive Parser v4.0</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">Aggressive Parser v4.0 (Cloud Edition)</p>', unsafe_allow_html=True)
 
 with st.sidebar:
     st.header("⚙️ Settings")
     mode = st.radio("Select Mode:", ["1. Bookkeeping (Create Excel)", "2. Audit (Verify Excel)"])
-    st.info("Running Aggressive Extraction Mode")
+    st.info("Running Cloud Optimized Extraction")
 
 uploaded_invoices = st.file_uploader("1️⃣ Upload Invoices (PDF/Images)", 
                                      type=['pdf', 'png', 'jpg', 'jpeg'], 
@@ -173,7 +143,7 @@ if uploaded_invoices:
         processed_data = []
         progress_bar = st.progress(0)
         
-        with st.spinner("Extracting Data..."):
+        with st.spinner("Extracting Data (Cloud Engine)..."):
             for i, file in enumerate(uploaded_invoices):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file.name.split('.')[-1]}") as tmp:
                     tmp.write(file.getvalue())
@@ -241,10 +211,20 @@ if st.session_state.audit_results is not None:
         
         if file_to_show:
             st.info(f"Viewing: {file_to_show.name}")
-            if file_to_show.type == "application/pdf":
+            
+            # --- SAFE DOWNLOAD BUTTON (Fixes Chrome Block) ---
+            st.download_button(
+                label=f"💾 Download {file_to_show.name} to View",
+                data=file_to_show.getvalue(),
+                file_name=file_to_show.name,
+                mime=file_to_show.type
+            )
+            
+            # --- SAFE PREVIEW (With Fallback) ---
+            if "pdf" in file_to_show.type:
                 import base64
                 base64_pdf = base64.b64encode(file_to_show.getvalue()).decode('utf-8')
-                pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600"></iframe>'
+                pdf_display = f'<object data="data:application/pdf;base64,{base64_pdf}" type="application/pdf" width="100%" height="500"><p>Preview blocked by browser. Use Download button!</p></object>'
                 st.markdown(pdf_display, unsafe_allow_html=True)
             else:
                 st.image(file_to_show, use_column_width=True)
