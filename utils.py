@@ -6,14 +6,23 @@ import easyocr
 import numpy as np
 from PIL import Image
 import streamlit as st
+import shutil  # <--- THIS IS REQUIRED FOR CLOUD
 
-# --- CONFIGURATION ---
-# POINT THIS TO YOUR TESSERACT EXE
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# --- CONFIGURATION: CLOUD COMPATIBILITY ---
+# This logic fixes the "C:\Program Files" error
+if shutil.which('tesseract'): 
+    # We are on the Cloud (Linux) -> Find it automatically
+    pytesseract.pytesseract.tesseract_cmd = shutil.which('tesseract')
+else:
+    # We are on Windows (Local) -> Use your path
+    possible_path = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+    if os.path.exists(possible_path):
+        pytesseract.pytesseract.tesseract_cmd = possible_path
 
-# Load EasyOCR once (Cache it to speed up app)
+# Load EasyOCR once (Cache it)
 @st.cache_resource
 def get_easyocr_reader():
+    # gpu=False is CRITICAL for the Cloud (It will crash if True)
     return easyocr.Reader(['en'], gpu=False)
 
 def extract_text_ensemble(file_path):
@@ -30,21 +39,26 @@ def extract_text_ensemble(file_path):
     
     try:
         # === CASE A: IMAGE FILES (JPG, PNG) ===
-        if ext in [".jpg", ".jpeg", ".png", ".bmp", ".tiff"]:
+        if ext in [".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"]:
             try:
                 img = Image.open(file_path)
                 
                 # Engine 1: Tesseract
                 combined_text += f"{separator}--- TESSERACT OCR ---{separator}"
-                combined_text += pytesseract.image_to_string(img) + "\n"
+                try:
+                    combined_text += pytesseract.image_to_string(img) + "\n"
+                except Exception as e:
+                    combined_text += f"[Tesseract Error: {e}]\n"
                 
                 # Engine 2: EasyOCR
-                reader = get_easyocr_reader()
-                # Convert PIL Image to Numpy for EasyOCR
-                img_np = np.array(img)
-                results = reader.readtext(img_np, detail=0)
-                combined_text += f"{separator}--- EASYOCR AI ---{separator}"
-                combined_text += " ".join(results) + "\n"
+                try:
+                    reader = get_easyocr_reader()
+                    img_np = np.array(img)
+                    results = reader.readtext(img_np, detail=0)
+                    combined_text += f"{separator}--- EASYOCR AI ---{separator}"
+                    combined_text += " ".join(results) + "\n"
+                except Exception as e:
+                    combined_text += f"[EasyOCR Error: {e}]\n"
                 
                 return combined_text
             except Exception as e:
@@ -60,24 +74,29 @@ def extract_text_ensemble(file_path):
         except: pass
 
         # 2. Image-based OCR (Tesseract + EasyOCR)
-        doc = fitz.open(file_path)
-        for i in range(len(doc)):
-            page = doc.load_page(i)
-            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # Zoom=2
+        try:
+            doc = fitz.open(file_path)
+            for i in range(len(doc)):
+                page = doc.load_page(i)
+                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # Zoom=2
+                
+                img_pil = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+                
+                try:
+                    combined_text += pytesseract.image_to_string(img_pil) + "\n"
+                except: pass
+                
+                try:
+                    reader = get_easyocr_reader()
+                    results = reader.readtext(img_np, detail=0)
+                    combined_text += " ".join(results) + "\n"
+                except: pass
+                
+            doc.close()
+        except Exception as e:
+            return f"[PDF Image Scan Error: {e}]"
             
-            # Create generic image objects
-            img_pil = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-            img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
-            
-            # Tesseract
-            combined_text += pytesseract.image_to_string(img_pil) + "\n"
-            
-            # EasyOCR
-            reader = get_easyocr_reader()
-            results = reader.readtext(img_np, detail=0)
-            combined_text += " ".join(results) + "\n"
-            
-        doc.close()
         return combined_text
 
     except Exception as e:
