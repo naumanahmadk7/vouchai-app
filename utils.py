@@ -6,15 +6,14 @@ import easyocr
 import numpy as np
 from PIL import Image
 import streamlit as st
-import shutil  # <--- THIS IS REQUIRED FOR CLOUD
+import shutil  # <--- CRITICAL FOR CLOUD
 
-# --- CONFIGURATION: CLOUD COMPATIBILITY ---
-# This logic fixes the "C:\Program Files" error
+# --- CONFIGURATION: CLOUD vs LOCAL ---
+# This tells the app: "If on Cloud, find Tesseract automatically. If on Windows, look in C drive."
 if shutil.which('tesseract'): 
-    # We are on the Cloud (Linux) -> Find it automatically
     pytesseract.pytesseract.tesseract_cmd = shutil.which('tesseract')
 else:
-    # We are on Windows (Local) -> Use your path
+    # Windows Fallback
     possible_path = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
     if os.path.exists(possible_path):
         pytesseract.pytesseract.tesseract_cmd = possible_path
@@ -22,14 +21,14 @@ else:
 # Load EasyOCR once (Cache it)
 @st.cache_resource
 def get_easyocr_reader():
-    # gpu=False is CRITICAL for the Cloud (It will crash if True)
+    # gpu=False is required for Free Cloud Hosting
     return easyocr.Reader(['en'], gpu=False)
 
 def extract_text_ensemble(file_path):
     """
     Ensemble OCR:
     - PDF: Runs Digital Read + Tesseract + EasyOCR
-    - Image: Runs Tesseract + EasyOCR directly (bypasses PDF engine)
+    - Image: Runs Tesseract + EasyOCR directly
     """
     combined_text = ""
     separator = "\n" + "="*20 + "\n"
