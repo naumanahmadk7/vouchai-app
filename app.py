@@ -9,9 +9,9 @@ st.set_page_config(
     page_icon="🛡️"
 )
 
-# IMPORT TOOLS (Modular Structure)
-# Note: We import 'audit_tool' which contains the logic we just moved
-import audit_tool 
+# IMPORT TOOLS (The Modular Connections)
+import audit_tool       # Kitchen #1 (Audit)
+import statement_tool   # Kitchen #2 (Statement Converter)
 
 # ==========================================
 # 1. SIDEBAR NAVIGATION
@@ -38,14 +38,5 @@ if menu_choice == "1. Audit Workbench (Free)":
     audit_tool.run_audit_tool()
 
 elif menu_choice == "2. Statement Converter (Pro)":
-    st.title("🏦 PDF Statement Converter")
-    st.warning("🚧 This module is under construction.")
-    st.markdown("""
-    ### Coming Soon
-    This feature will allow you to:
-    - Upload PDF Bank Statements (Chase, Wells Fargo, etc.)
-    - Automatically extract tables into Excel.
-    - Reconcile balances automatically.
-    
-    **Status:** Development Phase.
-    """)
+    # Run the function from statement_tool.py
+    statement_tool.run_statement_converter()
